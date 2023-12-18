@@ -2,6 +2,7 @@
 #include <iostream>
 #include "DataLoader.h"
 #include "include\fasp.h"
+#include "ReverseCuthillMckee.h"
 
 using namespace std;
 int main()
@@ -17,12 +18,14 @@ int main()
 
 
 	dCSRmat original_mat;
-
+	dCSRmat result_mat;
 	loader.LoadDiagonalMatrix(path, &original_mat);
 
 //	for (int i = 0; i < original_mat.row; i++) {
 //		cout << original_mat.IA[i] << endl;
 //	}
+	ReverseCuthillMckee rcm;
+	rcm.RCM(&original_mat, &result_mat);
 
 	system("pause");
 }

@@ -1,15 +1,17 @@
 #include "ReverseCuthillMckee.h"
-#include "./base/include/fasp.h"
+#include "include/fasp.h"
 #include <iostream>
 #include <vector>
 #include <unordered_set>
 #include <random>
+#include <include/fasp_functs.h>
+#include <map>
 using namespace std;
 ReverseCuthillMckee::ReverseCuthillMckee(){
 
 }
 /**
- * This function implements the RCM algorithm.
+ * RCM(.,.) implements the RCM algorithm.
  * The algorithm takes two inputs, a diagonal input matrix in the format of CSR, and a diagonal output matrix in the format of CSR.
  * The algorithm re-orders the input matrix in a more compact manner, so that the bandwidth of the diagnoal matrix is reduced.
  * The time complexity of the algorithm is high, further optimization is needed.
@@ -22,10 +24,49 @@ ReverseCuthillMckee::ReverseCuthillMckee(){
  * 
  * Implemented by Xavier Wang on 12/15/2023.
  */
-void RCM(dCSRmat* input, dCSRmat* output) {
+void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output) {
+	//Initialization:
+	int row_count = input->row;
+	int col_count = input->col;
+	int nnz_count = input->nnz;
+	int* IA = input->IA;
+	int* JA = input->JA;
+	double* vals = input->val;
 
+	int chosen_node = -1;
+	int challenger_node = -1;
 
+	if (row_count != col_count) {
+		cerr << "Error in RCM(.): the input matrix is not diagonal" << endl;
+		return;
+	}
+	
+	//Find the pseudo-peripheral node.
+	int p_node = Peripheral_Node_Finder(input);
+	
+	int new_index = nnz_count - 1;
 
+	vector<unordered_set<int>> level_structure = GenerateLevelStructure(input, p_node);
+
+	//Generate the new index schema based on the level-strucure, in REVERSE (Reverse Cuthill Mckee).
+	map<int, int> mp;
+	for (unordered_set<int> i : level_structure) {
+		for (int j : i) {
+			mp.insert(pair<int, int>(j, new_index));
+			new_index--;
+		}
+	}
+
+	//Re-order the matrix using the new indices. A COO-formatted matrix is more suitable for the job.
+	dCOOmat coo_matrix;
+	fasp_format_dcsr_dcoo(input, &coo_matrix);
+
+	for (int i = 0; i < coo_matrix.row; i++) {
+		coo_matrix.rowind[i] = mp.at(coo_matrix.rowind[i]);
+		coo_matrix.colind[i] = mp.at(coo_matrix.colind[i]);
+	}
+	
+	fasp_format_dcoo_dcsr(&coo_matrix, output);
 }
 
 
@@ -44,7 +85,7 @@ void RCM(dCSRmat* input, dCSRmat* output) {
  * Implemented by Xavier Wang on 12/15/2023.
  */
 
-int Peripheral_Node_Finder(dCSRmat* input) {
+int ReverseCuthillMckee::Peripheral_Node_Finder(dCSRmat* input) {
 	//Initialization:
 	int row_count = input->row;
 	int col_count = input->col;
@@ -57,8 +98,8 @@ int Peripheral_Node_Finder(dCSRmat* input) {
 	int challenger_node = -1;
 
 	if (row_count != col_count) {
-		cerr << "The input is not diagonal" << endl;
-		return;
+		cerr << "Error in Peripheral_Node_Finder (.), the input matrix is not diagonal" << endl;
+		return 0;
 	}
 	//STEP 1: Since the chosen node is vacant, randomly set a node as the chosen node first;
 	//Notice: there are other solutions for finding the starting node, a random approach is the most efficient, yet the randomness may cause problem when debugging due to randomness.
@@ -78,7 +119,7 @@ int Peripheral_Node_Finder(dCSRmat* input) {
 	int chosen_node_eccentricity = level_structure.size();
 
 	//STEP 3: Find the challenger in the level_structure
-	int challenger_node = find_challenger(level_structure.back(), input, 1);
+	challenger_node = find_challenger(level_structure.back(), input, 1);
 
 	//STEP 4: Generate a level structure based on the new chosen node.
 	//calculate the eccentricy of the challenger
@@ -97,16 +138,7 @@ int Peripheral_Node_Finder(dCSRmat* input) {
 		level_structure = GenerateLevelStructure(input, challenger_node);
 		challenger_node_eccentricity = level_structure.size();
 	}
-
-	level_structure.clear();
-	level_structure = GenerateLevelStructure(input, challenger_node);
-	challenger_node_eccentricity = level_structure.size();
-	while (challenger_node_eccentricity > chosen_node_eccentricity) {
-		//The challenger becomes the new chosen one, repeat STEP 3-4
-		chosen_node = challenger_node;
-	}
-
-	
+	return chosen_node;
 }
 
 /**
@@ -121,7 +153,7 @@ int Peripheral_Node_Finder(dCSRmat* input) {
  *
  * Implemented by Xavier Wang on 12/18/2023.
  */
-vector<unordered_set<int>> GenerateLevelStructure(dCSRmat* matrix, int initial_node) {
+vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* matrix, int initial_node) {
 
 	// The distance between nodes in the i-th layer and initial node is i.
 
@@ -181,7 +213,7 @@ vector<unordered_set<int>> GenerateLevelStructure(dCSRmat* matrix, int initial_n
  *
  * Implemented by Xavier Wang on 12/18/2023.
  */
-int find_challenger(unordered_set<int> vector_set, dCSRmat* matrix, int schema) {
+int ReverseCuthillMckee::find_challenger(unordered_set<int> vector_set, dCSRmat* matrix, int schema) {
 
 	if (schema == 1) {
 	//Schema 1: The challenger is the node in the last level of the level-structure, with the highest degree;
