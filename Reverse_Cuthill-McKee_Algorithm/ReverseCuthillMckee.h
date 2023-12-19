@@ -1,13 +1,13 @@
 #pragma once
 #include <unordered_set>
-#include "include/fasp.h"
+#include "fasp.h"
 using namespace std;
 
 class ReverseCuthillMckee {
 public:
 	ReverseCuthillMckee();
 
-	void RCM(dCSRmat* input, dCSRmat* output);
+	void RCM(dCSRmat* input, dCOOmat* output);
 
 	int Peripheral_Node_Finder(dCSRmat* input);
 

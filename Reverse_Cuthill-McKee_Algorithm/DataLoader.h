@@ -7,7 +7,7 @@
 #include <fstream>
 #include <string>
 #include <list>
-#include "./base/include/fasp.h"
+#include "fasp.h"
 using namespace std;
 
 class DataLoader {
@@ -16,6 +16,7 @@ public:
 
 	void LoadDiagonalMatrix(string path, dCSRmat* csr_matrix);
 
+	void WriteDiagonalMatrix(string path, dCOOmat* coo_matrix);
 };
 
 #endif

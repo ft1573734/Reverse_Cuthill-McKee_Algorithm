@@ -4,7 +4,7 @@
 #include <string>
 #include <list>
 #include "DataLoader.h"
-#include "./base/include/fasp.h"
+#include "fasp.h"
 
 using namespace std;
 DataLoader::DataLoader() {
@@ -17,11 +17,12 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
     list<int> col_list;
     list<double> val_list;
 
-    int num_row = 0;
-    int num_col = 0;
 
     int counter = 0;
     int tmp_row_id = -1;
+
+    int row_count = 0;
+    int col_count = 0;
 
     string line;
     ifstream file(path);
@@ -51,9 +52,15 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
                 switch (token_count) {
                 case 1:
                     row_id = stoi(token);
+                    if (row_id > row_count) {
+                        row_count = row_id;
+                    }
                     break;
                 case 2:
                     col_id = stoi(token);
+                    if (col_id > col_count) {
+                        col_count = col_id;
+                    }
                     break;
                 case 3:
                     break;
@@ -65,23 +72,12 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
                 line.erase(0, pos + delimiter.length());
             }
 
-            if (num_row < row_id) {
-                num_row = row_id;
-            }
-            if (num_col < col_id) {
-                num_col = col_id;
-            }
-
-
-
 
             if (row_id != tmp_row_id) {
                 row_index_list.push_back(counter);
                 tmp_row_id = row_id;
             }
-            else {
-                counter++;
-            }
+            counter++;
 
 
             col_list.push_back(col_id);
@@ -90,15 +86,18 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
 
         }
         file.close();
+        
+        //Since the index starts with 0, a "++" on the row/col count is necessary.
+        row_count++;
+        col_count++;
 
-        int row_count = row_index_list.size();
-        int col_count = col_list.size();
+
         int val_count = val_list.size();
 
 
-        int* row_arr = new int[row_count];
-        int* col_arr = new int[col_count];
-        double* vals_arr = new double[val_count];
+        int* row_arr = new int[row_index_list.size()];
+        int* col_arr = new int[col_list.size()];
+        double* vals_arr = new double[val_list.size()];
 
         copy(row_index_list.begin(), row_index_list.end(), row_arr);
         copy(col_list.begin(), col_list.end(), col_arr);
@@ -107,8 +106,8 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
         
 
 
-        coo_matrix->row = num_row;
-        coo_matrix->col = num_col;
+        coo_matrix->row = row_count;
+        coo_matrix->col = col_count;
         coo_matrix->nnz = val_count;
         coo_matrix->IA = row_arr;
         coo_matrix->JA = col_arr;
@@ -121,5 +120,20 @@ void DataLoader::LoadDiagonalMatrix(string path, dCSRmat* coo_matrix) {
         cerr << "Read file error" << endl;
     }
 
+}
+
+void WriteDiagonalMatrix(string path, dCOOmat* coo_matrix){
+    string header = "Re-ordered matrix";
+    ofstream myfile(path);
+    if (myfile.is_open())
+    {
+        string delimiter = "  ";
+        for (int i = 0; i < coo_matrix->row; i++) {
+            myfile << coo_matrix->rowind[i]<<delimiter<<coo_matrix->colind[i]<<delimiter<<delimiter<<coo_matrix->val[i]<<delimiter << endl;
+        }
+
+        myfile.close();
+    }
+    else cout << "Unable to open file";
 
 }

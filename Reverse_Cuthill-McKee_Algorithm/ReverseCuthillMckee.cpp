@@ -1,11 +1,14 @@
 #include "ReverseCuthillMckee.h"
-#include "include/fasp.h"
 #include <iostream>
 #include <vector>
 #include <unordered_set>
 #include <random>
-#include <include/fasp_functs.h>
 #include <map>
+#include <fstream>
+extern "C" {
+#include "fasp.h"
+#include "fasp_functs.h"
+}
 using namespace std;
 ReverseCuthillMckee::ReverseCuthillMckee(){
 
@@ -24,7 +27,7 @@ ReverseCuthillMckee::ReverseCuthillMckee(){
  * 
  * Implemented by Xavier Wang on 12/15/2023.
  */
-void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output) {
+void ReverseCuthillMckee::RCM(dCSRmat* input, dCOOmat* output) {
 	//Initialization:
 	int row_count = input->row;
 	int col_count = input->col;
@@ -44,7 +47,7 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output) {
 	//Find the pseudo-peripheral node.
 	int p_node = Peripheral_Node_Finder(input);
 	
-	int new_index = nnz_count - 1;
+	int new_index = row_count - 1;
 
 	vector<unordered_set<int>> level_structure = GenerateLevelStructure(input, p_node);
 
@@ -60,13 +63,40 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output) {
 	//Re-order the matrix using the new indices. A COO-formatted matrix is more suitable for the job.
 	dCOOmat coo_matrix;
 	fasp_format_dcsr_dcoo(input, &coo_matrix);
-
-	for (int i = 0; i < coo_matrix.row; i++) {
-		coo_matrix.rowind[i] = mp.at(coo_matrix.rowind[i]);
-		coo_matrix.colind[i] = mp.at(coo_matrix.colind[i]);
-	}
 	
-	fasp_format_dcoo_dcsr(&coo_matrix, output);
+	//The fasp_format_dcsr_dcoo(.,.) might have a problem, I have to manually set the statistical values.
+	coo_matrix.row = row_count;
+	coo_matrix.col = col_count;
+	coo_matrix.nnz = nnz_count;
+
+	int* const reordered_rowind = new int[nnz_count];
+	int* const reordered_colind = new int[nnz_count];
+
+
+	for (int i = 0; i < coo_matrix.nnz; i++) {
+		reordered_rowind[i] = mp.at(coo_matrix.rowind[i]);
+		reordered_colind[i] = mp.at(coo_matrix.colind[i]);
+	}
+
+	coo_matrix.rowind = reordered_rowind;
+	coo_matrix.colind = reordered_colind;
+	
+	string header = "Re-ordered matrix";
+
+	string out_path = "D:\\ProgramFiles\\NaViiX_fasp_AMG\\kvlcc2_AMG\\reordered\\ro_0_level.dat";
+	ofstream myfile(out_path);
+	if (myfile.is_open())
+	{
+		string delimiter = "  ";
+		myfile << header << endl;
+		for (int i = 0; i < coo_matrix.nnz; i++) {
+			myfile << coo_matrix.rowind[i] << delimiter << coo_matrix.colind[i] << delimiter << delimiter << coo_matrix.val[i] << delimiter << endl;
+		}
+
+		myfile.close();
+	}
+	else cout << "Unable to open file";
+
 }
 
 
@@ -86,6 +116,7 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output) {
  */
 
 int ReverseCuthillMckee::Peripheral_Node_Finder(dCSRmat* input) {
+	cout << "finding peripheral node" << endl;
 	//Initialization:
 	int row_count = input->row;
 	int col_count = input->col;
@@ -112,6 +143,8 @@ int ReverseCuthillMckee::Peripheral_Node_Finder(dCSRmat* input) {
 
 		chosen_node = uni(rng);
 	}
+
+	chosen_node = 0;
 	
 	//STEP 2: Generate the level structure of the chosen_node, which basically means scanning the graph layer by layer.
 	vector<unordered_set<int>> level_structure = GenerateLevelStructure(input, chosen_node);
@@ -154,7 +187,7 @@ int ReverseCuthillMckee::Peripheral_Node_Finder(dCSRmat* input) {
  * Implemented by Xavier Wang on 12/18/2023.
  */
 vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* matrix, int initial_node) {
-
+	cout << "Generating Level Structure" << endl;
 	// The distance between nodes in the i-th layer and initial node is i.
 
 	//Initialize the remaining nodes using an unordered set:
@@ -172,12 +205,10 @@ vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* 
 	vector<unordered_set<int>> level_structure;
 	level_structure.push_back(tmp_level);
 
-
 	while (remainder_nodes.empty() == false) {
 		unordered_set<int> previous_level = tmp_level;
 		tmp_level.clear();
 		//record the previous level
-		level_structure.push_back(previous_level);
 		//find the adjacent nodes of the previous layer (excluding visited nodes)
 		for (int i : previous_level) {
 			//get the i-th row of the input matrix. The NNZs within the row identifies the neighbours of the i-th node
@@ -190,11 +221,20 @@ vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* 
 						cerr << "something is wrong" << endl;
 					}
 					tmp_level.insert(tmp_node);
+					remainder_nodes.erase(tmp_node);
+				}
+				else {
+					continue;
 				}
 			}
 		}
 		level_structure.push_back(tmp_level);
+		cout << "tmp_level size is " << tmp_level.size() << ", including nodes:" << endl;
+		cout << endl;
+		cout << "Remainder Node Count: " << remainder_nodes.size() << endl;
+
 	}
+	cout << "The size of the level structure is " << level_structure.size() << endl;
 	return level_structure;
 }
 
