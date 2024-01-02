@@ -14,9 +14,17 @@ class DataLoader {
 public:
 	DataLoader();
 
-	void LoadDiagonalMatrix(string path, dCSRmat* csr_matrix);
+	void LoadDiagonalMatrix(string path, dCSRmat* csr_matrix, bool has_header);
 
-	void WriteDiagonalMatrix(string path, dCOOmat* coo_matrix);
+	void WriteMatrix(string path, dCOOmat* coo_matrix, bool need_header);
+
+	void WriteMatrix(string path, dCSRmat* csr_matrix, bool need_header);
+
+	void WriteVector(string path, dvector* v);
+
+	void LoadFaspAMGParameters(string path, AMG_param* param);
+
+	void LoadVector(string path, dvector* vector, bool has_header);
 };
 
 #endif

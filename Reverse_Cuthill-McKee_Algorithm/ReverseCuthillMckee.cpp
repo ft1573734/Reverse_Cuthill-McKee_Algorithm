@@ -14,20 +14,21 @@ ReverseCuthillMckee::ReverseCuthillMckee(){
 
 }
 /**
- * RCM(.,.) implements the RCM algorithm.
- * The algorithm takes two inputs, a diagonal input matrix in the format of CSR, and a diagonal output matrix in the format of CSR.
+ * RCM(.,.,.) implements the RCM algorithm.
+ * The algorithm takes three inputs, a diagonal input matrix in the format of CSR, a diagonal output matrix in the format of CSR and a permutation matrix responsible for the conversion.
  * The algorithm re-orders the input matrix in a more compact manner, so that the bandwidth of the diagnoal matrix is reduced.
  * The time complexity of the algorithm is high, further optimization is needed.
- * 
- * Input: 
+ *
+ * Input:
  *		*input: a diagonal matrix in the format of CSR;
- *		*output: a diagonal matrix in the format of CSR.
- * Output: 
+ *		*output: a diagonal matrix in the format of CSR;
+ *		*perm_matrix: the permutation matrix used for converting the input to the output i.e. O = PIP^T.
+ * Output:
  *		void
- * 
- * Implemented by Xavier Wang on 12/15/2023.
+ *
+ * Implemented & updated by Xavier Wang on 12/28/2023.
  */
-void ReverseCuthillMckee::RCM(dCSRmat* input, dCOOmat* output) {
+void ReverseCuthillMckee::RCM(dCSRmat* input, dCSRmat* output, dCSRmat* perm_matrix) {
 	//Initialization:
 	int row_count = input->row;
 	int col_count = input->col;
@@ -44,6 +45,10 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCOOmat* output) {
 		return;
 	}
 	
+	/*
+	* Generating re-ordering schema...
+	*/
+
 	//Find the pseudo-peripheral node.
 	int p_node = Peripheral_Node_Finder(input);
 	
@@ -60,11 +65,56 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCOOmat* output) {
 		}
 	}
 
+
+	/*
+	* Constructing the permutation matrix...
+	*/
+	int* perm_matrix_row = (int*)malloc(sizeof(int) * row_count);
+	int* perm_matrix_col = (int*)malloc(sizeof(int) * row_count);
+	double* perm_matrix_vals = (double*)malloc(sizeof(double) * row_count);
+
+	//initialize the permutation matrix
+	for (int i = 0; i < row_count; i++) {
+		perm_matrix_vals[i] = 1.0;
+		perm_matrix_row[i] = i;
+		perm_matrix_col[i] = i;
+	}
+	//reordering the rows of the perm_matrix
+	for (int i = 0; i < row_count; i++) {
+		int new_ind = mp.at(perm_matrix_row[i]);
+		perm_matrix_row[i] = new_ind;
+	}
+
+	dCOOmat perm_matrix_coo;
+	perm_matrix_coo.row = row_count;
+	perm_matrix_coo.col = row_count; //There is no problem here, since perm matrix is a square matrix with 1 nnz per row/col.
+	perm_matrix_coo.nnz = row_count; //Therefore, row, col and nnz counts are all row_count (or col_count, we are processing symmetic matrix here).
+	perm_matrix_coo.rowind = perm_matrix_row;
+	perm_matrix_coo.colind = perm_matrix_col;
+	perm_matrix_coo.val = perm_matrix_vals;
+
+	//Convert perm_matrix to CSR format, since most of the computations in fasp only supports CSR.
+	fasp_format_dcoo_dcsr(&perm_matrix_coo, perm_matrix);
+
+
+	//Compute PAP':
+
+	//Construct the transpose of P i.e. P'
+	dCSRmat perm_matrix_T;
+	fasp_dcsr_trans(perm_matrix, &perm_matrix_T);
+	//output = R*A*P
+	fasp_blas_dcsr_rap(perm_matrix, input, &perm_matrix_T ,output);
+
+	/*****
+	* Deprecated: Conversion in old-fashioned way.
+	*****/
+	/*
 	//Re-order the matrix using the new indices. A COO-formatted matrix is more suitable for the job.
 	dCOOmat coo_matrix;
 	fasp_format_dcsr_dcoo(input, &coo_matrix);
 	
 	//The fasp_format_dcsr_dcoo(.,.) might have a problem, I have to manually set the statistical values.
+
 	coo_matrix.row = row_count;
 	coo_matrix.col = col_count;
 	coo_matrix.nnz = nnz_count;
@@ -80,23 +130,9 @@ void ReverseCuthillMckee::RCM(dCSRmat* input, dCOOmat* output) {
 
 	coo_matrix.rowind = reordered_rowind;
 	coo_matrix.colind = reordered_colind;
-	
-	string header = "Re-ordered matrix";
 
-	string out_path = "D:\\ProgramFiles\\NaViiX_fasp_AMG\\kvlcc2_AMG\\reordered\\ro_0_level.dat";
-	ofstream myfile(out_path);
-	if (myfile.is_open())
-	{
-		string delimiter = "  ";
-		myfile << header << endl;
-		for (int i = 0; i < coo_matrix.nnz; i++) {
-			myfile << coo_matrix.rowind[i] << delimiter << coo_matrix.colind[i] << delimiter << delimiter << coo_matrix.val[i] << delimiter << endl;
-		}
-
-		myfile.close();
-	}
-	else cout << "Unable to open file";
-
+	fasp_format_dcoo_dcsr(&coo_matrix, output);
+	*/
 }
 
 
@@ -229,9 +265,9 @@ vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* 
 			}
 		}
 		level_structure.push_back(tmp_level);
-		cout << "tmp_level size is " << tmp_level.size() << ", including nodes:" << endl;
-		cout << endl;
-		cout << "Remainder Node Count: " << remainder_nodes.size() << endl;
+		//cout << "tmp_level size is " << tmp_level.size() << ", including nodes:" << endl;
+		//cout << endl;
+		//cout << "Remainder Node Count: " << remainder_nodes.size() << endl;
 
 	}
 	cout << "The size of the level structure is " << level_structure.size() << endl;
@@ -240,10 +276,11 @@ vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* 
 
 
 /**
- * find_challenger(.) is a PRIVATE function used for finding the 'challenger node' within the last layer of the level-structure. There are three possible schemas:
+ * find_challenger(.) is a PRIVATE function used for finding the 'challenger node' within the last layer of the level-		structure. There are three possible schemas:
  *	1. select the node with the smallest degree;
- *	2. TODO: select a node from the connected components within the last layer. 
+ *	2. TODO: select nodes of the smallest degree from each of the connected components within the last layer.
  *	3. select a random point. (not recommended)
+ * So far only schema 1 is implemented.
  * Input:
  *		vector_set: the nodes within the last layer.
  *		*matrix: a pointer to the matrix corresponding to the level-structure.
@@ -256,7 +293,7 @@ vector<unordered_set<int>> ReverseCuthillMckee::GenerateLevelStructure(dCSRmat* 
 int ReverseCuthillMckee::find_challenger(unordered_set<int> vector_set, dCSRmat* matrix, int schema) {
 
 	if (schema == 1) {
-	//Schema 1: The challenger is the node in the last level of the level-structure, with the highest degree;
+	//Schema 1: The challenger is the node in the last level of the level-structure, with the smallest degree;
 		int min_degree = INT_MAX;
 		int tmp_node_index;
 		int tmp_degree;
@@ -272,5 +309,67 @@ int ReverseCuthillMckee::find_challenger(unordered_set<int> vector_set, dCSRmat*
 		return challenger_node;
 	}
 	return -1;
-	
+}
+
+/**
+* Compute the bandwidth of a symmetric matrix, col by col / row by row.
+* We denote the bandwidth of each col as b(i)
+* Theoretically, the bandwidth of a symmetric matrix is max(b(i)).
+* However, sometimes we want to study the bandwidth of each col.
+* Therefore, this funtion returns an array corresponding to the bandwidth of each col.
+* Input:
+*		*matrix: a pointer to a symmetric matrix.
+* Output:
+*		int* a pointer to the 1st element of the bandwidth array.
+* Implemented by Xavier Wang on 12/26/2023.
+*/
+int ReverseCuthillMckee::ComputeBandwidth(dCSRmat* matrix, int* bandwidths) {
+ 	int row_count = matrix->row;
+	int max_bandwidth = 0;
+	int* IA = matrix->IA;
+	int* JA = matrix->JA;
+	int sum_width = 0;
+	for (int i = 0; i < row_count; i++) {
+		int min_col_ind = INT_MAX;
+		int max_col_ind = -1;
+		for (int j = 0; j < (IA[i + 1] - IA[i]); j++) {
+			if (JA[IA[i] + j] < min_col_ind) {
+				min_col_ind = JA[IA[i] + j];
+			}
+			if (JA[IA[i] + j] > max_col_ind) {
+				max_col_ind = JA[IA[i] + j];
+			}
+		}
+		sum_width += max_col_ind - min_col_ind;
+		bandwidths[i] = i - min_col_ind;
+		if (bandwidths[i] > max_bandwidth) {
+			max_bandwidth = bandwidths[i];
+		}
+	}
+	cout << "Average width per row is " << sum_width / row_count << "." << endl;
+	return max_bandwidth;
+}
+
+/**
+* Compute the envelope of a symmetric matrix.
+* The official definition of the envelope of a symmetric matrix is as follows:
+* Env(A) = {(i,j)| 0 < j-i <= b(i), 1<=i,j<=n}[1]
+* [1]The Reverse Cuthill-McKee Algorithm in Distributed-Memory, 2017.
+*
+* An intuitive understanding is that the envelope is the area surrounded by the edge-NNZs of the upper-triangle of the matrix.
+*
+* Input:
+*		*matrix: a pointer to a symmetric matrix.
+*		int*: a pointer to the 1st element of the bandwidth array.
+* Output:
+*		int: the envelope of the symmetric matrix.
+* Implemented by Xavier Wang on 12/26/2023.
+*/
+int ReverseCuthillMckee::ComputeEnvelope(dCSRmat* matrix, int* bandwidths) {
+	int envelope = 0;
+	int row_count = matrix->row;
+	for (int i = 0; i < row_count; i++) {
+		envelope += bandwidths[i];
+	}
+	return envelope;
 }

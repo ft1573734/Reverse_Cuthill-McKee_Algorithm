@@ -133,6 +133,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="amg_exp.cpp" />
     <ClCompile Include="DataLoader.cpp" />
     <ClCompile Include="Helloworld.cpp" />
     <ClCompile Include="ReverseCuthillMckee.cpp" />
